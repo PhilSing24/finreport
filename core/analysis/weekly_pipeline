@@ -1,0 +1,270 @@
+# core/analysis/weekly_pipeline.py
+from __future__ import annotations
+import os
+from dataclasses import dataclass
+from typing import List, Optional, Dict, Any, Tuple
+from datetime import date, datetime, timedelta, timezone
+
+import numpy as np
+import pandas as pd
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from sentence_transformers import SentenceTransformer
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.metrics.pairwise import cosine_similarity
+
+# --- config & helpers ---------------------------------------------------------
+
+DEFAULT_SOURCES = ["finance.yahoo.com"]  # You can widen later
+MIN_BODY_CHARS = 800                     # drop very short parses
+MAX_PER_TICKER = 40                      # cap articles to avoid overload
+EMBED_MODEL = "all-MiniLM-L6-v2"         # fast & good-enough
+RNG = np.random.default_rng(42)
+
+FINANCE_HINTS = {
+    "*": [
+        "revenue","earnings","eps","guidance","margin","beat","miss",
+        "analyst","upgrade","downgrade","valuation","supply","demand",
+    ],
+    "NVDA": [
+        "ai","datacenter","gpu","blackwell","h100","h200","export","semiconductor",
+    ],
+    "TSLA": [
+        "delivery","production","fsd","robotaxi","musk","ev","autonomy","cybertruck",
+    ],
+}
+
+def pg_conn():
+    dsn = os.getenv("PG_DSN", "postgresql:///finreport")
+    return psycopg2.connect(dsn)
+
+def daterange_utc(start: str, end_excl: str) -> Tuple[date, date]:
+    s = date.fromisoformat(start)
+    e = date.fromisoformat(end_excl)
+    return s, e
+
+# --- selection ---------------------------------------------------------------
+
+def fetch_articles(start_date: str, end_date_exclusive: str,
+                   tickers: List[str],
+                   sources: Optional[List[str]] = None) -> pd.DataFrame:
+    """Load candidate rows from Postgres for given UTC date window (inclusive start, exclusive end)."""
+    sources = sources or DEFAULT_SOURCES
+    where = [
+        "published_date_utc >= %s::date",
+        "published_date_utc <  %s::date",
+        "full_body IS NOT NULL",
+        "fetch_status = 'ok'",
+    ]
+    params: List[Any] = [start_date, end_date_exclusive]
+
+    if tickers:
+        where.append("EXISTS (SELECT 1 FROM unnest(tickers) t WHERE t = ANY(%s))")
+        params.append(tickers)
+    if sources:
+        where.append("(publisher->>'name') = ANY(%s)")
+        params.append(sources)
+
+    sql = f"""
+    SELECT id, published_utc, published_date_utc, title, article_url AS url,
+           publisher->>'name' AS source, tickers, description,
+           full_body, full_body_chars, summary, keywords
+    FROM news_raw
+    WHERE {' AND '.join(where)}
+    ORDER BY published_utc ASC;
+    """
+
+    with pg_conn() as conn:
+        df = pd.read_sql(sql, conn, params=params)
+
+    # ensure types
+    if not df.empty:
+        if not isinstance(df.get("tickers", []), pd.Series):
+            df["tickers"] = df["tickers"].apply(lambda x: x or [])
+        df["full_body_chars"] = df["full_body_chars"].fillna(0).astype(int)
+        df["summary"] = df["summary"].fillna("")
+        df["keywords"] = df["keywords"].apply(lambda ks: ks if isinstance(ks, list) else [])
+    return df
+
+
+# --- quality filter + duplicate handling -------------------------------------
+
+def filter_and_dedupe(df: pd.DataFrame,
+                      min_chars: int = MIN_BODY_CHARS) -> pd.DataFrame:
+    if df.empty: 
+        return df
+
+    # keep length
+    df = df[df["full_body_chars"] >= min_chars].copy()
+
+    # dedupe (same title+url)
+    df["dupe_key"] = (df["title"].fillna("").str.lower().str.strip()
+                      + " :: "
+                      + df["url"].fillna("").str.lower().str.strip())
+    df = (df.sort_values(["full_body_chars", "published_utc"], ascending=[False, True])
+            .drop_duplicates(subset=["dupe_key"], keep="first")
+            .drop(columns=["dupe_key"]))
+
+    return df.reset_index(drop=True)
+
+
+# --- scoring -----------------------------------------------------------------
+
+def finance_hint_hits(text: str, ticker: str) -> int:
+    tokens = FINANCE_HINTS.get(ticker, []) + FINANCE_HINTS["*"]
+    t = text.lower()
+    return sum(1 for w in set(tokens) if w in t)
+
+def single_ticker_bonus(tickers: List[str], ticker: str) -> float:
+    # reward unique focus on this ticker
+    if ticker in (tickers or []) and len(tickers or []) == 1:
+        return 1.0
+    if ticker in (tickers or []):
+        return 0.4
+    return 0.0
+
+def score_articles(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    # base signals
+    df["len_score"] = np.log1p(df["full_body_chars"].clip(lower=0)) / 10.0
+    df["hint_score"] = df.apply(lambda r: finance_hint_hits((r["summary"] or "") + " " + (r["full_body"] or ""), ticker), axis=1)
+    df["hint_score"] = df["hint_score"].clip(upper=10) / 10.0
+    df["uni_score"]  = df["tickers"].apply(lambda ks: single_ticker_bonus(ks, ticker))
+
+    # slight recency boost inside the window
+    t = pd.to_datetime(df["published_utc"]).astype("int64")  # ns
+    if len(t) > 1:
+        df["rec_score"] = (t - t.min()) / (t.max() - t.min() + 1)
+    else:
+        df["rec_score"] = 0.0
+
+    df["score"] = 0.45*df["len_score"] + 0.35*df["hint_score"] + 0.10*df["uni_score"] + 0.10*df["rec_score"]
+    return df.sort_values("score", ascending=False).reset_index(drop=True)
+
+
+def cap_by_ticker(df: pd.DataFrame, ticker: str, k: int = MAX_PER_TICKER) -> pd.DataFrame:
+    if df.empty:
+        return df
+    # keep only rows where ticker is involved
+    df = df[df["tickers"].apply(lambda arr: ticker in (arr or []))].copy()
+    return df.head(k).reset_index(drop=True)
+
+
+# --- clustering --------------------------------------------------------------
+
+@dataclass
+class ClusterResult:
+    labels: np.ndarray
+    centers: Optional[np.ndarray]
+    k: int
+
+def embed_texts(texts: List[str]) -> np.ndarray:
+    model = SentenceTransformer(EMBED_MODEL)
+    return model.encode(texts, normalize_embeddings=True)
+
+def choose_k(n: int) -> int:
+    # heuristic: 6 for 40 docs; 3 for <=15; floor at 2
+    if n >= 35: return 6
+    if n >= 25: return 5
+    if n >= 18: return 4
+    if n >= 12: return 3
+    return max(2, min(3, n))  # 2 or 3
+
+def cluster_articles(df: pd.DataFrame) -> Tuple[pd.DataFrame, ClusterResult]:
+    if df.empty:
+        return df, ClusterResult(labels=np.array([], dtype=int), centers=None, k=0)
+
+    # cluster on per-article summary if present, else first 600 chars of body
+    texts = [(s if s and len(s) > 0 else (b or "")[:600]) for s, b in zip(df["summary"], df["full_body"])]
+    X = embed_texts(texts)
+    k = choose_k(len(df))
+    if len(df) <= 2:
+        labels = np.zeros(len(df), dtype=int)
+        return df.assign(cluster=labels), ClusterResult(labels=labels, centers=None, k=1)
+
+    model = AgglomerativeClustering(n_clusters=k, affinity="cosine", linkage="average", compute_distances=False)
+    labels = model.fit_predict(1 - cosine_similarity(X))
+    return df.assign(cluster=labels), ClusterResult(labels=labels, centers=None, k=k)
+
+
+# --- extractive topic brief (no LLM) -----------------------------------------
+
+def top_sentences_for_cluster(rows: pd.DataFrame, per_article:int=1, max_total:int=10) -> List[str]:
+    """Pick a few strongest sentences from each article summary/body (extractive)."""
+    picks: List[str] = []
+    for _, r in rows.iterrows():
+        # prefer summary; fallback to first 2 sentences of body
+        text = (r["summary"] or "").strip()
+        if not text:
+            text = (r["full_body"] or "")[:1200]
+        # simple sentence split
+        parts = [p.strip() for p in text.replace("\n", " ").split(". ") if p.strip()]
+        picks.extend(parts[:per_article])
+        if len(picks) >= max_total:
+            break
+    return picks[:max_total]
+
+
+def name_cluster(rows: pd.DataFrame, top_kws:int=3) -> str:
+    """Name cluster from most frequent keywords."""
+    all_kws = []
+    for ks in rows["keywords"]:
+        if isinstance(ks, list):
+            all_kws.extend([k.lower() for k in ks])
+        elif isinstance(ks, str) and ks:
+            all_kws.extend([k.strip().lower() for k in ks.split(",") if k.strip()])
+    if not all_kws:
+        # fallback from title tokens
+        tokens = " ".join(rows["title"].fillna("").tolist()).lower().split()
+        all_kws = [t for t in tokens if t.isalpha() and len(t) > 3]
+    if not all_kws:
+        return "General updates"
+    s = pd.Series(all_kws).value_counts().head(top_kws).index.tolist()
+    return " / ".join(s)
+
+
+# --- public API --------------------------------------------------------------
+
+@dataclass
+class Topic:
+    name: str
+    bullets: List[str]
+    refs: List[Dict[str, str]]  # minimal refs: title, url, source, published_utc
+
+@dataclass
+class TickerReport:
+    ticker: str
+    period_start: str
+    period_end_excl: str
+    topics: List[Topic]
+    picked_articles: pd.DataFrame
+
+def build_ticker_report(df_all: pd.DataFrame, ticker: str,
+                        start_date: str, end_date_exclusive: str) -> TickerReport:
+    # score & cap
+    scored = score_articles(df_all.copy(), ticker)
+    picked = cap_by_ticker(scored, ticker, MAX_PER_TICKER)
+
+    # cluster
+    clustered, meta = cluster_articles(picked)
+
+    topics: List[Topic] = []
+    for c in sorted(clustered["cluster"].unique()):
+        rows = clustered[clustered["cluster"] == c].copy()
+        topic_name = name_cluster(rows)
+        bullets = top_sentences_for_cluster(rows, per_article=1, max_total=8)
+
+        refs = (rows[["title","url","source","published_utc"]]
+                .fillna("")
+                .to_dict(orient="records"))
+        topics.append(Topic(name=topic_name, bullets=bullets, refs=refs[:4]))  # 2–4 refs
+
+    return TickerReport(
+        ticker=ticker,
+        period_start=start_date,
+        period_end_excl=end_date_exclusive,
+        topics=topics,
+        picked_articles=clustered
+    )

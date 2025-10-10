@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# Virtual environments
+finreportenv/
+.venv/
+
+# Local configs
+.env
+.env.local
+
+# Build & artifacts
+build/
+*.log
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
