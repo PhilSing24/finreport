@@ -1,102 +1,164 @@
-from typing import List, Dict, Sequence
+# core/selectors/select_finance_yahoo.py
+"""
+Select relevant and diverse Yahoo Finance articles for a ticker.
+Uses API-aligned field names (url, source, tags).
+Scoring without relying on Tiingo's tags - uses summary length, body length, and title signals.
+"""
+from typing import List, Dict
 import pandas as pd
 from sqlalchemy import text
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from core.data.db import engine
 
-# --- finance signals (tweak as you wish) ---
-UNIVERSAL = {
-    "revenue", "eps", "guidance", "margin", "gross", "operating",
-    "free cash flow", "datacenter", "data center", "gpu", "ai",
-    "cloud", "capex", "opex", "supply", "demand", "backlog",
-    "pricing", "valuation", "buyback", "dividend", "shipment",
-    "china", "export",
-}
-NVDA_HINTS = UNIVERSAL | {"blackwell", "h100", "h200", "semiconductor"}
-TSLA_HINTS = UNIVERSAL | {"delivery", "deliveries", "production", "fsd", "robotaxi", "autonomy", "cybertruck"}
+# ==============================================================================
+# UNIVERSAL FINANCIAL KEYWORDS (for title scoring)
+# ==============================================================================
+FINANCIAL_TITLE_KEYWORDS = [
+    "guidance", "margin", "eps", "revenue", "earnings", "profit",
+    "beat", "miss", "outlook", "forecast", "upgrade", "downgrade",
+    "q1", "q2", "q3", "q4", "%", "surge", "plunge", "rally", "drop",
+    "delivery", "deliveries", "production", "sales", "growth",
+]
 
 
-def _hint_set(ticker: str) -> set:
-    t = (ticker or "").upper()
-    if t == "NVDA":
-        return NVDA_HINTS
-    if t == "TSLA":
-        return TSLA_HINTS
-    return UNIVERSAL
+# ==============================================================================
+# SCORING FUNCTIONS
+# ==============================================================================
 
-
-def _len_plateau(n: int, lo=500, hi=6000, peak=2500) -> float:
-    """Score body length: 0 below lo, near-max around peak, tapering by hi."""
-    if n is None:
+def _score_body_length(n: int) -> float:
+    """
+    Score article body length with plateau curve.
+    - Too short (<500): 0.0
+    - Optimal (2500): 1.0  
+    - Too long (>6000): 0.8
+    """
+    if n is None or n <= 500:
         return 0.0
-    n = int(n)
-    if n <= lo:
-        return 0.0
-    if n >= hi:
+    if n >= 6000:
         return 0.8
-    # rise to peak
-    x = min(n, peak) - lo
-    denom = max(1, peak - lo)
-    base = min(1.0, x / denom)
-    # taper after peak
-    if n > peak:
-        tail = (hi - n) / max(1, (hi - peak))
-        base = 0.8 + max(0.0, tail) * 0.2
-    return float(base)
+    
+    # Rise to peak at 2500
+    if n <= 2500:
+        return (n - 500) / 2000.0
+    
+    # Taper after peak
+    return 0.8 + (6000 - n) / 3500.0 * 0.2
 
 
-def _title_signal(title: str, hints: Sequence[str]) -> float:
-    """Small signal for financially-relevant words in the title."""
-    t = (title or "").lower()
-    score = 0.0
-    for k in [
-        "guidance", "margin", "eps", "revenue", "delivery",
-        "datacenter", "data center", "gpu", "fsd", "robotaxi",
-        "china", " q1", " q2", " q3", " q4", "%",
-    ]:
-        if k in t:
-            score += 0.025
-    if any(h in t for h in hints):
-        score += 0.05
-    return min(score, 0.15)
-
-
-def _keyword_overlap(keywords: Sequence[str], hints: Sequence[str]) -> float:
-    """Overlap of extracted keywords with our hint set."""
-    if not keywords:
+def _score_title_signals(title: str) -> float:
+    """Give bonus for financial keywords in title."""
+    if not title:
         return 0.0
-    # normalize in case DB returns keywords as a string
-    if isinstance(keywords, str):
-        ks = {k.strip().lower() for k in keywords.split(",") if k.strip()}
-    else:
-        ks = {str(k).lower() for k in keywords}
-    hs = {h.lower() for h in hints}
-    overlap = len(ks & hs)
-    return overlap / (overlap + 4.0)  # gentle saturation
+    
+    title_lower = title.lower()
+    score = sum(0.025 for kw in FINANCIAL_TITLE_KEYWORDS if kw in title_lower)
+    return min(score, 0.15)  # Cap at 0.15
 
 
-def score_row(row: Dict, ticker: str) -> float:
-    """Combine summary length, keyword overlap, body length, and title signal."""
-    hints = _hint_set(ticker)
-    slen = len(row.get("summary") or "")
-    summary_len_score = min(slen, 1200) / 1200.0
-    kw_score = _keyword_overlap(row.get("keywords"), hints)
-    body_chars = row.get("full_body_chars") or 0
-    body_score = _len_plateau(body_chars)
-    title_sc = _title_signal(row.get("title") or "", hints)
-    score = 0.45 * summary_len_score + 0.30 * kw_score + 0.15 * body_score + 0.10 * title_sc
-    return round(score, 6)
-
-
-def _dedupe_keep_latest(df: pd.DataFrame) -> pd.DataFrame:
-    """Dedupe by (lower(title), source) keeping the most recent row."""
-    key = df["title"].fillna("").str.lower() + "||" + df["source"].fillna("")
-    df = df.assign(_dupe_key=key)
-    return (
-        df.sort_values("published_utc")          # earliest first
-          .drop_duplicates("_dupe_key", keep="last")  # keep latest
-          .drop(columns=["_dupe_key"])
+def calculate_article_score(article: Dict) -> float:
+    """
+    Calculate composite relevance score for an article.
+    
+    Weights (no longer using unreliable Tiingo tags):
+    - 60% Summary length (substantial content indicator)
+    - 30% Body length (quality indicator)
+    - 10% Title signals (topic relevance)
+    """
+    # Summary length score (max 1200 chars)
+    summary_len = len(article.get("summary") or "")
+    summary_score = min(summary_len, 1200) / 1200.0
+    
+    # Body length score
+    body_score = _score_body_length(article.get("full_body_chars") or 0)
+    
+    # Title signal score
+    title_score = _score_title_signals(article.get("title") or "")
+    
+    # Weighted combination
+    total = (
+        0.60 * summary_score +
+        0.30 * body_score +
+        0.10 * title_score
     )
+    
+    return round(total, 6)
 
+
+# ==============================================================================
+# DIVERSITY FUNCTIONS (MMR)
+# ==============================================================================
+
+def apply_mmr_diversity(articles: List[Dict], max_articles: int, lambda_param: float = 0.5) -> List[Dict]:
+    """
+    Apply Maximum Marginal Relevance to select diverse articles.
+    
+    Uses title + summary for semantic similarity via TF-IDF.
+    Balances relevance (score) with diversity (uniqueness).
+    
+    Args:
+        articles: Articles with '__score' field
+        max_articles: Max articles to select
+        lambda_param: Balance factor (0.5 = equal relevance/diversity weight)
+    
+    Returns:
+        Diverse subset of articles
+    """
+    if len(articles) <= max_articles:
+        return articles
+    
+    # Build text representations (title + summary for best accuracy)
+    texts = [
+        f"{a.get('title', '')} {a.get('summary', '')}"
+        for a in articles
+    ]
+    
+    # Calculate TF-IDF similarity matrix
+    vectorizer = TfidfVectorizer(max_features=100, stop_words='english')
+    tfidf_matrix = vectorizer.fit_transform(texts)
+    similarities = cosine_similarity(tfidf_matrix)
+    
+    # MMR selection
+    selected_idx = []
+    remaining_idx = set(range(len(articles)))
+    
+    # Step 1: Pick highest-scored article
+    best_idx = max(remaining_idx, key=lambda i: articles[i]['__score'])
+    selected_idx.append(best_idx)
+    remaining_idx.remove(best_idx)
+    
+    # Step 2: Iteratively pick articles balancing score and diversity
+    while len(selected_idx) < max_articles and remaining_idx:
+        best_mmr = -float('inf')
+        best_candidate = None
+        
+        for candidate in remaining_idx:
+            # Relevance component
+            relevance = articles[candidate]['__score']
+            
+            # Diversity component (distance from already-selected)
+            max_similarity = max(
+                similarities[candidate][selected]
+                for selected in selected_idx
+            )
+            
+            # MMR score: balance relevance and diversity
+            mmr_score = lambda_param * relevance - (1 - lambda_param) * max_similarity
+            
+            if mmr_score > best_mmr:
+                best_mmr = mmr_score
+                best_candidate = candidate
+        
+        if best_candidate is not None:
+            selected_idx.append(best_candidate)
+            remaining_idx.remove(best_candidate)
+    
+    return [articles[i] for i in selected_idx]
+
+
+# ==============================================================================
+# MAIN SELECTION FUNCTION
+# ==============================================================================
 
 def select_articles(
     ticker: str,
@@ -104,65 +166,96 @@ def select_articles(
     end_date: str,
     max_articles: int = 12,
     min_body_chars: int = 800,
+    use_mmr: bool = True,
 ) -> List[Dict]:
     """
-    Return ranked Yahoo Finance articles for a single ticker in [start_date, end_date).
-
-    Rules:
-    - Source: finance.yahoo.com
-    - Ticker tagged on article
-    - Parsed full_body present & long enough
-    - Deduped by (title, source)
-    - Ranked by composite score (summary length, keyword overlap, body length, title signal)
+    Select relevant and diverse Yahoo Finance articles for a ticker.
+    
+    Process:
+    1. Query database for articles matching filters
+    2. Deduplicate by title + source
+    3. Score articles by financial relevance
+    4. Apply MMR for diversity (optional)
+    
+    Args:
+        ticker: Stock symbol (e.g., 'NVDA', 'AAPL')
+        start_date: Start date 'YYYY-MM-DD' (inclusive)
+        end_date: End date 'YYYY-MM-DD' (exclusive)
+        max_articles: Maximum articles to return
+        min_body_chars: Minimum article body length
+        use_mmr: Use MMR diversity (True) or just top-scored (False)
+    
+    Returns:
+        List of article dictionaries
     """
-    stmt = text("""
+    # Query database (using API-aligned field names)
+    query = text("""
         SELECT
-          id, published_utc, published_date_utc,
-          title, article_url AS url,
-          publisher->>'name' AS source,
-          tickers, description, summary, keywords, full_body, full_body_chars
+            id, published_utc, published_date_utc,
+            title, url, source,
+            tickers, description, summary, tags, 
+            full_body, full_body_chars
         FROM news_raw
-        WHERE publisher->>'name' = 'finance.yahoo.com'
-          AND :tkr = ANY(tickers)
+        WHERE source = 'finance.yahoo.com'
+          AND :ticker = ANY(tickers)
           AND published_date_utc >= CAST(:start AS date)
-          AND published_date_utc <  CAST(:end   AS date)
+          AND published_date_utc < CAST(:end AS date)
           AND fetch_status = 'ok'
           AND full_body IS NOT NULL
           AND full_body_chars >= :min_chars
         ORDER BY published_utc
     """)
-
+    
     params = {
-        "tkr": (ticker or "").upper(),
-        "start": start_date,     # 'YYYY-MM-DD'
-        "end": end_date,         # 'YYYY-MM-DD' (exclusive)
-        "min_chars": int(min_body_chars),
+        "ticker": ticker.upper(),
+        "start": start_date,
+        "end": end_date,
+        "min_chars": min_body_chars,
     }
-
+    
     with engine.connect() as conn:
-        df = pd.read_sql(stmt, conn, params=params)
-
+        df = pd.read_sql(query, conn, params=params)
+    
     if df.empty:
         return []
-
-    # Normalize keywords to list for downstream safety
-    if "keywords" in df.columns:
-        def _norm_kw(v):
-            if v is None:
-                return []
-            if isinstance(v, list):
-                return v
-            if isinstance(v, str):
-                return [k.strip() for k in v.split(",") if k.strip()]
-            return list(v) if hasattr(v, "__iter__") else []
-        df["keywords"] = df["keywords"].map(_norm_kw)
-
-    df = _dedupe_keep_latest(df)
-
-    # Score and pick top-N
-    df["__score"] = df.apply(lambda r: score_row(r.to_dict(), ticker), axis=1)
-    df = df.sort_values("__score", ascending=False)
-    if max_articles is not None:
-        df = df.head(int(max_articles))
-
-    return df.drop(columns=["__score"]).to_dict(orient="records")
+    
+    # Normalize tags to list (keep for potential future use)
+    def normalize_tags(val):
+        if val is None:
+            return []
+        if isinstance(val, list):
+            return val
+        if isinstance(val, str):
+            return [k.strip() for k in val.split(",") if k.strip()]
+        return list(val) if hasattr(val, "__iter__") else []
+    
+    df["tags"] = df["tags"].map(normalize_tags)
+    
+    # Deduplicate by (title, source), keep latest
+    dedup_key = df["title"].fillna("").str.lower() + "||" + df["source"].fillna("")
+    df = (
+        df.assign(_key=dedup_key)
+          .sort_values("published_utc")
+          .drop_duplicates("_key", keep="last")
+          .drop(columns=["_key"])
+    )
+    
+    # Score all articles
+    articles = df.to_dict(orient="records")
+    for article in articles:
+        article["__score"] = calculate_article_score(article)
+    
+    # Sort by score
+    articles.sort(key=lambda x: x["__score"], reverse=True)
+    
+    # Apply diversity or just take top-N
+    if use_mmr and max_articles:
+        final_articles = apply_mmr_diversity(articles, max_articles)
+    else:
+        final_articles = articles[:max_articles] if max_articles else articles
+    
+    # Remove internal score field
+    return [
+        {k: v for k, v in article.items() if k != "__score"}
+        for article in final_articles
+    ]

@@ -18,8 +18,15 @@ load_dotenv(Path.home() / "finreport" / ".env")
 BUILD_DIR = Path.home() / "finreport" / "build"
 BUILD_DIR.mkdir(parents=True, exist_ok=True)
 
+# --- tolerance for target length (±10%) ---
+LENGTH_TOLERANCE = 0.10
 
-def run(ticker: str, start: str, end: str, max_articles: int, max_summary_chars: int, min_body_chars: int):
+
+def run(ticker: str, start: str, end: str, max_articles: int, target_summary_chars: int, min_body_chars: int):
+    # Calculate acceptable range for summary length (±10%)
+    min_summary_chars = int(target_summary_chars * (1 - LENGTH_TOLERANCE))
+    max_summary_chars = int(target_summary_chars * (1 + LENGTH_TOLERANCE))
+    
     # 1) Select candidate articles (already filtered to finance.yahoo.com in the selector)
     rows = select_articles(
         ticker,
@@ -48,6 +55,8 @@ def run(ticker: str, start: str, end: str, max_articles: int, max_summary_chars:
         start,
         end,
         consolidated,
+        target_chars=target_summary_chars,
+        min_chars=min_summary_chars,
         max_chars=max_summary_chars,
     ).strip()
 
@@ -62,6 +71,10 @@ def run(ticker: str, start: str, end: str, max_articles: int, max_summary_chars:
     urls = [r.get("url") for r in rows if r.get("url")]
     sources_md = "\n".join(f"- {u}" for u in urls) if urls else "- No relevant sources found."
 
+    # Calculate how close we are to target
+    actual_length = len(summary_text)
+    length_status = "✓" if min_summary_chars <= actual_length <= max_summary_chars else "⚠"
+    
     md = (
         f"# Ticker: {ticker}\n"
         f"**Period:** [{start} → {end}]\n\n"
@@ -69,7 +82,7 @@ def run(ticker: str, start: str, end: str, max_articles: int, max_summary_chars:
         f"## Summary\n\n"
         f"**{ticker} Investor Summary — {end}**\n\n"
         f"{summary_text}\n\n"
-        f"*({len(summary_text)} characters)*\n\n"
+        f"*({actual_length} characters {length_status} | target: {target_summary_chars} ±{int(LENGTH_TOLERANCE*100)}% [{min_summary_chars}-{max_summary_chars}])*\n\n"
         f"---\n\n"
         f"## Sources\n"
         f"{sources_md}\n"
@@ -80,6 +93,7 @@ def run(ticker: str, start: str, end: str, max_articles: int, max_summary_chars:
 
     print(f"✅ Wrote {out_path}")
     print(f"Selected articles: {len(rows)}  |  Consolidated bullets: {len(consolidated)}")
+    print(f"Summary length: {actual_length} chars (target: {target_summary_chars} ±{int(LENGTH_TOLERANCE*100)}% [{min_summary_chars}-{max_summary_chars}])")
 
 
 def main():
@@ -87,9 +101,10 @@ def main():
     p.add_argument("start", help="YYYY-MM-DD (inclusive)")
     p.add_argument("end", help="YYYY-MM-DD (exclusive)")
     p.add_argument("--ticker", default="NVDA", help="Ticker symbol, e.g. NVDA or TSLA")
-    p.add_argument("--max-articles", type=int, default=12)
-    p.add_argument("--min-body-chars", type=int, default=800)
-    p.add_argument("--max-summary-chars", type=int, default=1800)
+    p.add_argument("--max-articles", type=int, default=12, help="Maximum number of articles to select")
+    p.add_argument("--min-body-chars", type=int, default=800, help="Minimum article body length")
+    p.add_argument("--target-summary-chars", type=int, default=1800, 
+                   help="Target summary length in characters (actual range will be ±10%%)")
     args = p.parse_args()
 
     run(
@@ -97,11 +112,10 @@ def main():
         args.start,
         args.end,
         args.max_articles,
-        args.max_summary_chars,
+        args.target_summary_chars,
         args.min_body_chars,
     )
 
 
 if __name__ == "__main__":
     main()
-
