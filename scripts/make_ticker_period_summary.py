@@ -1,12 +1,12 @@
 # scripts/make_ticker_period_summary.py
 
-import os
-import sys
-import argparse
-from pathlib import Path
-from dotenv import load_dotenv
+import os                               # Import the operating system interface module for environment variable access
+import sys                              # Import system-specific parameters and functions (used for sys.argv for command-line args)
+import argparse                         # Import argument parser for creating user-friendly command-line interfaces
+from pathlib import Path                # Import Path class for object-oriented filesystem path handling (cross-platform)
+from dotenv import load_dotenv          # Import function to load environment variables from .env file into os.environ
 
-from core.selectors.select_finance_yahoo import select_articles
+from core.selectors.select_finance_yahoo import select_articles    # Import the article selection function that filters and ranks Yahoo Finance articles
 from core.summarize.map_reduce import (
     map_article_to_bullets,
     reduce_articles_to_bullets,
@@ -14,9 +14,9 @@ from core.summarize.map_reduce import (
 )
 
 # --- env / paths ---
-load_dotenv(Path.home() / "finreport" / ".env")
-BUILD_DIR = Path.home() / "finreport" / "build"
-BUILD_DIR.mkdir(parents=True, exist_ok=True)
+load_dotenv(Path.home() / "finreport" / ".env")    # Load environment variables from .env file located in ~/finreport/.env
+BUILD_DIR = Path.home() / "finreport" / "build"    # Define the output directory where generated Markdown summaries will be saved
+BUILD_DIR.mkdir(parents=True, exist_ok=True)       # Create the build directory if it doesn't exist
 
 # --- tolerance for target length (±10%) ---
 LENGTH_TOLERANCE = 0.10
@@ -36,6 +36,8 @@ def run(ticker: str, start: str, end: str, max_articles: int, target_summary_cha
         min_body_chars=min_body_chars,
     )
 
+    
+
     # 2) Map: per-article bullets
     per_article_bullets = []
     for r in rows:
@@ -45,6 +47,7 @@ def run(ticker: str, start: str, end: str, max_articles: int, target_summary_cha
         bullets = map_article_to_bullets(body, ticker)
         if bullets:
             per_article_bullets.append(bullets)
+       
 
     # 3) Reduce: consolidate bullets across articles
     consolidated = reduce_articles_to_bullets(per_article_bullets, ticker)
@@ -98,9 +101,9 @@ def run(ticker: str, start: str, end: str, max_articles: int, target_summary_cha
 
 def main():
     p = argparse.ArgumentParser(description="Generate a ticker summary over a period.")
-    p.add_argument("start", help="YYYY-MM-DD (inclusive)")
-    p.add_argument("end", help="YYYY-MM-DD (exclusive)")
-    p.add_argument("--ticker", default="NVDA", help="Ticker symbol, e.g. NVDA or TSLA")
+    p.add_argument("start", help="YYYY-MM-DD (inclusive)")                                                 # positional argument start date
+    p.add_argument("end", help="YYYY-MM-DD (exclusive)")                                                   # positional argument end date
+    p.add_argument("--ticker", default="NVDA", help="Ticker symbol, e.g. NVDA or TSLA")                    # optional argument ticker
     p.add_argument("--max-articles", type=int, default=12, help="Maximum number of articles to select")
     p.add_argument("--min-body-chars", type=int, default=800, help="Minimum article body length")
     p.add_argument("--target-summary-chars", type=int, default=1800, 
@@ -119,3 +122,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    

@@ -6,6 +6,7 @@ from datetime import datetime
 from core.analysis.weekly_pipeline import TickerReport, Topic
 
 def _fmt_topic(t: Topic) -> str:
+    print('hello1')
     lines = [f"### {t.name}"]
     for b in t.bullets:
         lines.append(f"- {b}")
@@ -22,6 +23,7 @@ def _fmt_topic(t: Topic) -> str:
     return "\n".join(lines)
 
 def render_markdown(nvda: TickerReport, tsla: TickerReport) -> str:
+     print('hello2')
     hdr = f"# Weekly News Brief: NVDA & TSLA ({nvda.period_start} → {nvda.period_end_excl})\n"
     hdr += f"_Generated: {datetime.utcnow().isoformat(timespec='seconds')}Z_\n\n"
 
