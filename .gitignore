@@ -21,3 +21,17 @@ build/
 .DS_Store
 .vscode/
 .idea/
+
+# Virtual environment
+venv/
+env/
+*.pyc
+__pycache__/
+
+# Outputs
+outputs/
+build/
+
+# Old structure (can delete later)
+core/
+scripts/
