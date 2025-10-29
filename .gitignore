@@ -6,14 +6,17 @@ __pycache__/
 *.egg-info/
 
 # Virtual environments
-finreportenv/
+venv/
+env/
 .venv/
+finreportenv/
 
-# Local configs
+# Environment variables
 .env
 .env.local
 
-# Build & artifacts
+# Generated outputs
+outputs/
 build/
 *.log
 
@@ -21,17 +24,3 @@ build/
 .DS_Store
 .vscode/
 .idea/
-
-# Virtual environment
-venv/
-env/
-*.pyc
-__pycache__/
-
-# Outputs
-outputs/
-build/
-
-# Old structure (can delete later)
-core/
-scripts/
