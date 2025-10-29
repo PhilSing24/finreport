@@ -1,4 +1,4 @@
-# core/data/tiingo_news.py
+# src/aifinreport/ingestion/tiingo.py
 """
 Fetch and validate news from Tiingo API, fetch full article bodies, 
 generate summaries, then upsert to PostgreSQL.
@@ -20,12 +20,10 @@ from psycopg2.extras import execute_values
 from dotenv import load_dotenv
 
 from aifinreport.ingestion.fetchers import fetch_article_text
+from aifinreport.config import TIINGO_API_TOKEN, PG_DSN
 from aifinreport.ingestion.summarizers import summarize_article
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
-
-TIINGO_TOKEN = os.environ["TIINGO_API_TOKEN"]
-PG_DSN = os.getenv("PG_DSN", "postgresql:///finreport")
 BASE = "https://api.tiingo.com/tiingo/news"
 
 # Company name mappings for common tickers
@@ -143,7 +141,7 @@ def fetch_news(
         "startDate": startDate,
         "endDate": endDate,
         "limit": limit,
-        "token": TIINGO_TOKEN,
+        "token": TIINGO_API_TOKEN,
     }
     if ticker:
         params["tickers"] = ticker.lower()
@@ -363,9 +361,9 @@ def upsert_news(items: Iterable[Dict[str, Any]]) -> int:
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 3:
-        print("Usage: python -m core.data.tiingo_news YYYY-MM-DD TICKER [--no-bodies]")
-        print("Example: python -m core.data.tiingo_news 2025-10-03 NVDA")
-        print("         python -m core.data.tiingo_news 2025-10-03 NVDA --no-bodies")
+        print("Usage: python -m aifinreport.ingestion.tiingo YYYY-MM-DD TICKER [--no-bodies]")
+        print("Example: python -m aifinreport.ingestion.tiingo 2025-10-03 NVDA")
+        print("         python -m aifinreport.ingestion.tiingo 2025-10-03 NVDA --no-bodies")
         raise SystemExit(2)
     
     day, tkr = sys.argv[1], sys.argv[2]
