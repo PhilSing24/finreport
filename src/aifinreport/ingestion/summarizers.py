@@ -1,4 +1,4 @@
-# core/data/summarize_text.py
+# src/aifinreport/ingestion/summarizers.py
 """
 Generate simple extractive summaries using TF-IDF.
 No keyword boosting needed - content validation already ensures relevance.

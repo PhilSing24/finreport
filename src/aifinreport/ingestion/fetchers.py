@@ -1,4 +1,4 @@
-# core/data/fetch_body_yahoo.py
+# src/aifinreport/ingestion/fetchers.py
 from __future__ import annotations
 import httpx
 import trafilatura
