@@ -62,8 +62,9 @@ def store_earnings_call(
                     INSERT INTO call_interventions (
                         call_id, ticker, timestamp_utc, relative_seconds,
                         relative_time, speaker_name, speaker_role, speaker_type,
-                        text, text_chars, sequence_order
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        text, text_chars, sequence_order, is_qa_section,
+                        is_question, is_answer, question_id, analyst_firm
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     call_id,
                     ticker,
@@ -75,7 +76,12 @@ def store_earnings_call(
                     intervention['speaker_type'],
                     intervention['text'],
                     intervention['text_chars'],
-                    intervention['sequence_order']
+                    intervention['sequence_order'],
+                    intervention.get('is_qa_section', False),
+                    intervention.get('is_question', False),
+                    intervention.get('is_answer', False),
+                    intervention.get('question_id'),
+                    intervention.get('analyst_firm')
                 ))
             
             print(f"✅ Stored {len(parsed_data['interventions'])} interventions")
