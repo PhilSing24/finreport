@@ -143,6 +143,75 @@ def get_prepared_remarks(call_id: str) -> list:
     except psycopg2.Error as e:
         raise psycopg2.Error(f"Database error: {e}")
 
+def get_qa_section(call_id: str) -> list:
+    """
+    Retrieve Q&A section (questions and answers) from earnings call.
+    
+    Args:
+        call_id: Unique identifier (e.g., 'earnings:nvda:q2-fy2026')
+    
+    Returns:
+        List of Q&A intervention dictionaries in chronological order
+    
+    Raises:
+        ValueError: If call_id not found
+        psycopg2.Error: If database connection fails
+    
+    Example:
+        >>> qa = get_qa_section("earnings:nvda:q2-fy2026")
+        >>> questions = [i for i in qa if i['is_question']]
+        >>> print(f"Found {len(questions)} analyst questions")
+    """
+    # Verify call exists
+    _ = get_earnings_call(call_id)  # Raises ValueError if not found
+    
+    query = """
+        SELECT 
+            sequence_order,
+            speaker_name,
+            speaker_role,
+            speaker_type,
+            timestamp_utc,
+            relative_time,
+            text,
+            text_chars,
+            is_question,
+            is_answer,
+            question_id,
+            analyst_firm
+        FROM call_interventions
+        WHERE call_id = %s
+          AND is_qa_section = TRUE
+        ORDER BY sequence_order
+    """
+    
+    try:
+        with psycopg2.connect(PG_DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (call_id,))
+                results = cur.fetchall()
+                
+                interventions = []
+                for row in results:
+                    interventions.append({
+                        "sequence_order": row[0],
+                        "speaker_name": row[1],
+                        "speaker_role": row[2],
+                        "speaker_type": row[3],
+                        "timestamp_utc": row[4],
+                        "relative_time": row[5],
+                        "text": row[6],
+                        "text_chars": row[7],
+                        "is_question": row[8],
+                        "is_answer": row[9],
+                        "question_id": row[10],
+                        "analyst_firm": row[11]
+                    })
+                
+                return interventions
+    
+    except psycopg2.Error as e:
+        raise psycopg2.Error(f"Database error: {e}")
 
 
 if __name__ == "__main__":
@@ -155,34 +224,55 @@ if __name__ == "__main__":
     print("-" * 60)
     call = get_earnings_call("earnings:nvda:q2-fy2026")
     print(f"✅ {call['ticker']} {call['fiscal_quarter']} {call['fiscal_year']}")
-    print(f"   Date: {call['call_date']}")
-    print(f"   Time (UTC): {call['call_start_utc']}")
     print(f"   Total interventions: {call['total_interventions']}")
-    print(f"   Total speakers: {call['total_speakers']}")
     
     # Test 2: get_prepared_remarks()
     print("\n📋 Test 2: get_prepared_remarks()")
     print("-" * 60)
     remarks = get_prepared_remarks("earnings:nvda:q2-fy2026")
     print(f"✅ Found {len(remarks)} prepared remarks")
-    print(f"\n   First 3 speakers:")
-    for i, remark in enumerate(remarks[:3], 1):
-        print(f"   {i}. {remark['speaker_name']} ({remark['speaker_type']}) at {remark['relative_time']}")
-        print(f"      Text preview: {remark['text'][:80]}...")
+    
+    # Test 3: get_qa_section()
+    print("\n📋 Test 3: get_qa_section()")
+    print("-" * 60)
+    qa = get_qa_section("earnings:nvda:q2-fy2026")
+    print(f"✅ Found {len(qa)} Q&A interventions")
+    
+    # Count questions vs answers
+    questions = [i for i in qa if i['is_question']]
+    answers = [i for i in qa if i['is_answer']]
+    print(f"   - {len(questions)} analyst questions")
+    print(f"   - {len(answers)} management answers")
+    
+    # Show first question
+    if questions:
+        q = questions[0]
+        print(f"\n   First question:")
+        print(f"   Analyst: {q['speaker_name']} ({q['analyst_firm']})")
+        print(f"   Time: {q['relative_time']}")
+        print(f"   Question: {q['text'][:100]}...")
+    
+    # Show first answer
+    if answers:
+        a = answers[0]
+        print(f"\n   First answer:")
+        print(f"   Speaker: {a['speaker_name']} ({a['speaker_role']})")
+        print(f"   Time: {a['relative_time']}")
+        print(f"   Answer: {a['text'][:100]}...")
     
     # Test with Q1
-    print("\n📋 Test 3: Q1 FY2026 prepared remarks")
+    print("\n📋 Test 4: Q1 FY2026 Q&A section")
     print("-" * 60)
-    remarks_q1 = get_prepared_remarks("earnings:nvda:q1-fy2026")
-    print(f"✅ Q1 has {len(remarks_q1)} prepared remarks")
+    qa_q1 = get_qa_section("earnings:nvda:q1-fy2026")
+    print(f"✅ Q1 has {len(qa_q1)} Q&A interventions")
     
     # Test error handling
-    print("\n📋 Test 4: Error handling")
+    print("\n📋 Test 5: Error handling")
     print("-" * 60)
     try:
-        remarks = get_prepared_remarks("earnings:invalid:id")
+        qa = get_qa_section("earnings:invalid:id")
     except ValueError as e:
-        print(f"✅ Error caught correctly: {e}")
+        print(f"✅ Error caught: {e}")
     
     print("\n" + "=" * 60)
     print("🎉 All tests passed!")
