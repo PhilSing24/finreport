@@ -1,6 +1,8 @@
 """
 Database tools for querying earnings call data.
 """
+
+
 import psycopg2
 from datetime import datetime
 from typing import Dict, Optional
@@ -459,13 +461,61 @@ def get_question_answer_pairs(call_id: str) -> list:
     
     return pairs
 
+def get_press_release(call_id: str) -> dict:
+    """
+    Get press release for an earnings call.
+    
+    Args:
+        call_id: Unique identifier (e.g., 'earnings:nvda:q3-fy2026')
+    
+    Returns:
+        Dictionary with press release data, or None if not found
+    
+    Example:
+        >>> pr = get_press_release("earnings:nvda:q3-fy2026")
+        >>> print(pr['title'])
+        'NVIDIA Announces Financial Results for Third Quarter Fiscal 2026'
+    """
+    query = """
+        SELECT 
+            id,
+            title,
+            full_body,
+            published_utc,
+            source
+        FROM news_raw
+        WHERE related_call_id = %s
+          AND is_press_release = TRUE
+          AND press_release_type = 'earnings'
+    """
+    
+    try:
+        with psycopg2.connect(PG_DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (call_id,))
+                result = cur.fetchone()
+                
+                if result is None:
+                    return None
+                
+                return {
+                    "id": result[0],
+                    "title": result[1],
+                    "full_body": result[2],
+                    "published_utc": result[3],
+                    "source": result[4]
+                }
+    
+    except psycopg2.Error as e:
+        raise psycopg2.Error(f"Database error: {e}")
+
 
 if __name__ == "__main__":
     # Test all database tools
     print("Testing all database tools...")
     print("=" * 70)
     
-    call_id = "earnings:nvda:q2-fy2026"
+    call_id = "earnings:nvda:q3-fy2026"
     
     # Test 1: get_earnings_call()
     print("\n1️⃣  get_earnings_call()")
@@ -536,6 +586,18 @@ if __name__ == "__main__":
         for ans in pair['answers']:
             print(f"      - {ans['speaker_name']} ({ans['speaker_role']})")
     
+    # Test 9: get_press_release()
+    print("\n9️⃣  get_press_release()")
+    print("-" * 70)
+    pr = get_press_release(call_id)
+    if pr:
+        print(f"✅ Found press release")
+        print(f"   Title: {pr['title'][:60]}...")
+        print(f"   Published: {pr['published_utc']}")
+        print(f"   Text length: {len(pr['full_body']):,} characters")
+    else:
+        print(f"⚠️  No press release found for {call_id}")
+
     # Error handling
     print("\n9️⃣  Error handling")
     print("-" * 70)
