@@ -1,4 +1,3 @@
-# Create new parser
 # src/aifinreport/ingestion/earnings_parser.py
 """
 Parse earnings call transcripts with clean structure.
@@ -25,29 +24,37 @@ def parse_transcript_file(file_path: Path, call_start_utc: datetime) -> Dict[str
     interventions = []
     sequence = 1
     
-    # Split by separators
-    blocks = content.split('---INTERVENTION---')[1:]  # Skip empty first element
-    qa_blocks = content.split('---Q&A---')[1:] if '---Q&A---' in content else []
+    # Split into blocks by both markers, preserving order
+    # Replace markers with unique separators
+    content_marked = content.replace('---INTERVENTION---', '\n###INTERVENTION###\n')
+    content_marked = content_marked.replace('---Q&A---', '\n###QA###\n')
     
-    # Parse interventions
-    for block in blocks:
-        if not block.strip() or '---Q&A---' in block:
+    # Split and process in order
+    sections = content_marked.split('###')
+    
+    for section in sections:
+        section = section.strip()
+        if not section:
             continue
         
-        intervention = parse_intervention_block(block.strip(), call_start_utc, sequence, False)
-        if intervention:
-            interventions.append(intervention)
-            sequence += 1
-    
-    # Parse Q&A
-    for qa_block in qa_blocks:
-        if not qa_block.strip():
-            continue
+        if section == 'INTERVENTION':
+            continue  # Skip the marker itself
+        elif section == 'QA':
+            continue  # Skip the marker itself
         
-        # Q&A can have multiple parts (question + multiple answers)
-        qa_interventions = parse_qa_block(qa_block.strip(), call_start_utc, sequence)
-        interventions.extend(qa_interventions)
-        sequence += len(qa_interventions)
+        # Check what type of block follows
+        if 'SPEAKER:' in section and 'TEXT:' in section:
+            # Regular intervention
+            intervention = parse_intervention_block(section, call_start_utc, sequence, False)
+            if intervention:
+                interventions.append(intervention)
+                sequence += 1
+        
+        elif 'ANALYST:' in section or 'RESPONDER:' in section:
+            # Q&A block
+            qa_interventions = parse_qa_block(section, call_start_utc, sequence)
+            interventions.extend(qa_interventions)
+            sequence += len(qa_interventions)
     
     # Sort by sequence to maintain order
     interventions.sort(key=lambda x: x['sequence_order'])
@@ -58,7 +65,6 @@ def parse_transcript_file(file_path: Path, call_start_utc: datetime) -> Dict[str
         'total_interventions': len(interventions),
         'total_speakers': len(set(i['speaker_name'] for i in interventions))
     }
-
 
 def parse_intervention_block(block: str, call_start_utc: datetime, sequence: int, is_qa: bool) -> Dict:
     """Parse a single intervention block."""
