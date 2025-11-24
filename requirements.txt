@@ -1,5 +1,6 @@
--e git+ssh://git@github.com/PhilSing24/finreport.git@dce7951e3bd07d28af3da39fec5bc03d2628dcaf#egg=aifinreport
+-e git+ssh://git@github.com/PhilSing24/finreport.git@72c2f305b61ee7beae5db59165e62b81b5800150#egg=aifinreport
 annotated-types==0.7.0
+anthropic==0.72.0
 anyio==4.11.0
 asttokens==3.0.0
 babel==2.17.0
@@ -8,15 +9,19 @@ certifi==2025.10.5
 chardet==5.2.0
 charset-normalizer==3.4.3
 comm==0.2.3
+contourpy==1.3.2
 courlan==1.3.2
 cssselect==1.3.0
+cycler==0.12.1
 dateparser==1.2.2
 debugpy==1.8.17
 decorator==5.2.1
 distro==1.9.0
+docstring_parser==0.17.0
 eval_type_backport==0.2.2
 exceptiongroup==1.3.0
 executing==2.2.1
+fonttools==4.60.1
 greenlet==3.2.4
 h11==0.16.0
 htmldate==1.9.3
@@ -29,20 +34,34 @@ ipython==8.37.0
 jedi==0.19.2
 jiter==0.11.0
 joblib==1.5.2
+jsonpatch==1.33
+jsonpointer==3.0.0
 jupyter_client==8.6.3
 jupyter_core==5.9.1
 jusText==3.0.2
+kiwisolver==1.4.9
+langchain-anthropic==1.0.1
+langchain-core==1.0.3
+langgraph==1.0.2
+langgraph-checkpoint==3.0.1
+langgraph-prebuilt==1.0.2
+langgraph-sdk==0.2.9
+langsmith==0.4.41
 lxml==5.4.0
 lxml_html_clean==0.4.3
+matplotlib==3.10.7
 matplotlib-inline==0.2.1
 mistralai==1.9.11
 nest-asyncio==1.6.0
 numpy==2.2.6
 openai==2.1.0
+orjson==3.11.4
+ormsgpack==1.12.0
 packaging==25.0
 pandas==2.3.3
 parso==0.8.5
 pexpect==4.9.0
+pillow==12.0.0
 platformdirs==4.5.0
 prompt_toolkit==3.0.52
 psutil==7.1.2
@@ -52,6 +71,8 @@ pure_eval==0.2.3
 pydantic==2.12.0
 pydantic_core==2.41.1
 Pygments==2.19.2
+pyparsing==3.2.5
+PyPDF2==3.0.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
 pytz==2025.2
@@ -60,6 +81,7 @@ pyzmq==27.1.0
 readability-lxml==0.8.4.1
 regex==2025.9.18
 requests==2.32.5
+requests-toolbelt==1.0.0
 scikit-learn==1.7.2
 scipy==1.15.3
 six==1.17.0
@@ -67,6 +89,7 @@ sniffio==1.3.1
 soupsieve==2.8
 SQLAlchemy==2.0.43
 stack-data==0.6.3
+tenacity==9.1.2
 threadpoolctl==3.6.0
 tld==0.13.1
 tornado==6.5.2
@@ -79,3 +102,5 @@ tzdata==2025.2
 tzlocal==5.3.1
 urllib3==2.5.0
 wcwidth==0.2.14
+xxhash==3.6.0
+zstandard==0.25.0
