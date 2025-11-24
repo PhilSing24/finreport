@@ -1,6 +1,6 @@
 # AIFinReport - AI-Powered Financial Analysis System
 
-An intelligent financial analysis platform that combines earnings call transcripts, news articles, and market data to generate comprehensive investment insights using AI agents.
+An **agentic AI application** that uses autonomous AI agents to analyze financial data. The system independently processes earnings call transcripts, correlates news sentiment, and tracks market movements to generate comprehensive investment insights.
 
 ## 🎯 Overview
 

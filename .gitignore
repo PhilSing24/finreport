@@ -24,3 +24,4 @@ build/
 .DS_Store
 .vscode/
 .idea/
+data/press_releases/
