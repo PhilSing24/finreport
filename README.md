@@ -1,32 +1,38 @@
 # AIFinReport - AI-Powered Financial Analysis System
 
-An **agentic AI application** that uses autonomous AI agents to analyze financial data. The system independently processes earnings call transcripts, correlates news sentiment, and tracks market movements to generate comprehensive investment insights.
+An **agentic AI application** that uses autonomous AI agents to analyze financial data. The system independently processes earnings call transcripts, correlates news sentiment with semantic ranking, and tracks market movements to generate comprehensive investment insights.
 
 ## 🎯 Overview
 
 AIFinReport automatically analyzes earnings calls by:
 
 - Processing detailed earnings call transcripts (prepared remarks + Q&A + closing)
-- Fetching 3-phase stock price data around earnings events
-- Correlating with news sentiment before and after calls
+- **Semantic ranking of news articles** using local embeddings (no API limits)
+- Fetching stock price data for any time period
 - Generating actionable investment briefs using AI agents
 
 ## ✨ Features
 
 ### Data Ingestion
 - **News Articles**: Automated ingestion from Tiingo API
+- **Press Releases**: Store earnings press releases (PDFs) in database
 - **Earnings Calls**: Parse structured transcripts with:
   - Speaker attribution and roles
   - Precise UTC timestamps
   - Q&A segmentation (questions, answers, analyst firms)
   - Closing remarks
 - **Stock Prices**: Real-time and historical OHLC data from Massive.com API
-  - 3-phase analysis (pre-event, event, post-event)
+  - Flexible time windows (any date range)
   - Multiple intervals (1min, 5min, 15min, 1hour, 1day)
   - Timezone-aware (UTC) with Singapore (UTC+8) support
 
 ### AI Agent Analysis
-- **Earnings Impact Analyst**: Autonomous agent that analyzes earnings calls
+- **News Period Analyst**: Analyze news and stock performance for any time period
+  - **Semantic article ranking** using local embeddings (sentence-transformers)
+  - Rank by relevance to earnings expectations
+  - Works for pre-earnings, post-earnings, or custom periods
+  - No API rate limits or costs
+- **Earnings Impact Analyst**: Full earnings call analysis workflow
   - Extracts key financial metrics from management remarks
   - Identifies analyst concerns from Q&A sessions
   - Correlates market reaction with call content
@@ -34,10 +40,11 @@ AIFinReport automatically analyzes earnings calls by:
 
 ### Database
 PostgreSQL with structured storage for:
-- Earnings call metadata and full transcripts
+- Earnings call metadata with **press release timestamps**
 - Timestamped interventions (speaker, role, content)
 - Q&A segmentation with question-answer linking
-- News articles with ticker associations
+- News articles with ticker associations and **full body text**
+- **Press releases** marked and linked to earnings calls
 - Time-series ready for price correlation
 - **All timestamps in UTC** (timestamptz)
 
@@ -47,37 +54,38 @@ PostgreSQL with structured storage for:
 │                    Data Sources                          │
 ├─────────────┬──────────────────┬────────────────────────┤
 │  Tiingo API │  Manual Entry    │    Massive.com API     │
-│   (News)    │  (Transcripts)   │   (Stock Prices)       │
+│   (News)    │  (Transcripts    │   (Stock Prices)       │
+│             │   & Press PDFs)  │                        │
 └──────┬──────┴────────┬─────────┴──────────┬─────────────┘
        │               │                    │
        ▼               ▼                    ▼
 ┌─────────────────────────────────────────────────────────┐
 │              Ingestion Layer                             │
-│  • tiingo.py          • earnings_parser.py               │
-│  • fetchers.py        • earnings_storage.py              │
+│  • tiingo.py               • earnings_parser.py          │
+│  • ingest_press_release.py • earnings_storage.py         │
 └──────────────────────┬──────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────┐
 │                PostgreSQL Database                       │
-│  • earnings_calls (timestamptz)                          │
-│  • call_interventions (full capture including closing)   │
-│  • news_raw / news_normalized                            │
+│  • earnings_calls (with press_release_time_utc)          │
+│  • call_interventions (full capture)                     │
+│  • news_raw (with full_body + press releases)            │
 └──────────────────────┬──────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────┐
 │                   Agent Tools                            │
-│  • database_tools.py (8 query functions)                 │
-│  • market_data_tools.py (3-phase price analysis)         │
+│  • database_tools.py (search_news, get_press_release)    │
+│  • market_data_tools.py (price analysis)                 │
+│  • news_ranker.py (semantic article ranking)             │
 └──────────────────────┬──────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────┐
-│            Earnings Impact Analyst Agent                 │
-│  • Load call metadata    • Fetch 3-phase prices          │
-│  • Extract key metrics   • Analyze Q&A                   │
-│  • Search news           • Generate report               │
+│               News Period Analyst Agent                  │
+│  • Analyze any time period  • Semantic article ranking   │
+│  • Stock performance         • Local embeddings          │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -101,25 +109,25 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
+# Note: sentence-transformers may need special installation
+pip install --upgrade pip
+pip install sentence-transformers --no-deps
+pip install torch transformers huggingface-hub tokenizers safetensors
+
 # Create .env file
 cat > .env << EOF
 PG_DSN=postgresql:///finreport
 TIINGO_API_KEY=your_tiingo_key
 MASSIVE_API_KEY=your_massive_key
-ANTHROPIC_API_KEY=your_claude_key
+MISTRAL_API_KEY=your_mistral_key
 EOF
 
 # Initialize database
 psql -c "CREATE DATABASE finreport"
 psql finreport -f migrations/001_create_earnings_tables.sql
+psql finreport -f migrations/002_add_press_release_columns.sql
 psql finreport -f migrations/003_standardize_timestamps.sql
-```
-
-### Create Database Tables
-```bash
-# Run migrations in order
-psql postgresql:///finreport -f migrations/001_create_earnings_tables.sql
-psql postgresql:///finreport -f migrations/003_standardize_timestamps.sql
+psql finreport -f migrations/004_add_event_timestamps.sql
 ```
 
 ## 📊 Usage
@@ -127,11 +135,12 @@ psql postgresql:///finreport -f migrations/003_standardize_timestamps.sql
 ### 1. Ingest News Articles
 ```bash
 # Ingest news for a specific date and ticker
-python -m aifinreport.ingestion.tiingo 2025-08-27 NVDA
+python -m aifinreport.ingestion.tiingo 2025-11-19 NVDA
 
 # Ingest multiple dates (around earnings)
-for date in 2025-08-{20..27} 2025-08-{28..31} 2025-09-{01..03}; do
+for date in 2025-11-{05..25}; do
     python -m aifinreport.ingestion.tiingo $date NVDA
+    sleep 1
 done
 ```
 
@@ -174,77 +183,125 @@ python -m aifinreport.cli.ingest_earnings \
   NVDA Q3 2026 2025-11-19 22:00
 ```
 
-**Note:** Call start time must be in UTC. The parser will automatically:
-- Capture all interventions including closing remarks
-- Parse Q&A sections with question-answer linking
-- Generate accurate timestamps based on relative times
+### 3. Ingest Press Release (Optional)
 
-### 3. Fetch Stock Prices
+Store press releases for reference:
+```bash
+# Ingest a press release PDF
+python -m aifinreport.cli.ingest_press_release \
+  data/press_releases/NVDA/NVDA_Q3_FY2026_PR_2025-11-19.pdf \
+  earnings:nvda:q3-fy2026
+```
+
+This stores:
+- Press release text in `news_raw` table
+- Marked as `is_press_release = TRUE`
+- Linked to earnings call via `related_call_id`
+- Enables retrieval with `get_press_release(call_id)`
+
+### 4. Analyze News Period with Semantic Ranking
+```python
+from datetime import datetime, timezone, timedelta
+from aifinreport.agents.news_period_analyst import analyze_news_period
+
+# Pre-earnings analysis (7 days before press release)
+pr_time = datetime(2025, 11, 19, 21, 30, 0, tzinfo=timezone.utc)
+
+result = analyze_news_period(
+    ticker="NVDA",
+    start_date=pr_time - timedelta(days=7),
+    end_date=pr_time,
+    quarter="Q3",
+    top_n_articles=10,
+    context="Pre-earnings expectations"
+)
+
+# Output:
+# - Finds all news articles in date range
+# - Ranks by semantic similarity to earnings expectations
+# - Returns top 10 most relevant articles
+# - Calculates stock performance for the period
+```
+
+**Or run from command line:**
+```bash
+python -m aifinreport.agents.news_period_analyst
+```
+
+**Example output:**
+```
+📊 NEWS PERIOD ANALYSIS
+======================================================================
+
+Ticker: NVDA
+Quarter: Q3
+Context: Pre-earnings expectations (7 days before press release)
+
+Period: 2025-11-12 → 2025-11-19
+Duration: 7 days
+
+📰 Fetching news articles...
+   Found 62 total articles
+
+🔍 Ranking articles by relevance using local embeddings...
+   Loading embedding model (one-time, ~2 seconds)...
+   ✅ Model loaded
+   Ranking 62 articles using local embeddings...
+   ✅ Ranked by semantic relevance
+   Selected top 10 most relevant articles
+
+======================================================================
+Top 10 Most Relevant Articles (by semantic similarity)
+======================================================================
+
+1. [Score: 0.747] Insights Into Nvidia (NVDA) Q3: Wall Street Projections
+   Published: 2025-11-14 22:15
+   ...
+
+💹 Stock Performance:
+   NVDA: -3.76%
+   Start: $193.80 (2025-11-12)
+   End:   $186.52 (2025-11-19)
+```
+
+### 5. Fetch Stock Prices
 ```python
 from datetime import datetime
-from aifinreport.tools.market_data_tools import (
-    fetch_ohlc_bars,
-    fetch_earnings_price_analysis
-)
+from aifinreport.tools.market_data_tools import fetch_ohlc_bars
 
-# Single window fetch (times in UTC, automatically handled)
+# Get prices for any time window
 bars = fetch_ohlc_bars(
     ticker="NVDA",
-    start_time=datetime(2025, 11, 19, 21, 30, 0),  # Will be treated as UTC
-    end_time=datetime(2025, 11, 19, 23, 4, 0),
-    interval="5min"
+    start_time=datetime(2025, 11, 12),
+    end_time=datetime(2025, 11, 19),
+    interval="1day"
 )
-
-# 3-phase earnings analysis
-analysis = fetch_earnings_price_analysis(
-    ticker="NVDA",
-    press_release_time=datetime(2025, 11, 19, 21, 30, 0),
-    call_end_time=datetime(2025, 11, 19, 23, 4, 0)
-)
-# Returns:
-# {
-#   'pre_event': [14 daily bars before PR],
-#   'event': [5-min bars during PR/call],
-#   'post_event': [7 daily bars after call],
-#   'summary': {metadata}
-# }
 ```
 
-### 4. Run AI Agent Analysis
-```bash
-# Analyze an earnings call
-python -m aifinreport.agents.earnings_analyst
-
-# Or programmatically:
-from aifinreport.agents.earnings_analyst import run_agent
-state = run_agent("earnings:nvda:q3-fy2026")
-print(state['report'])
-```
-
-### 5. Query Database Directly
+### 6. Query Database
 ```python
 from aifinreport.tools.database_tools import (
     get_earnings_call,
-    get_prepared_remarks,
+    search_news,
     get_qa_section,
-    search_news_around_call
+    get_press_release
 )
 
-# Get call info
+# Get call info (includes press_release_time_utc)
 call = get_earnings_call("earnings:nvda:q3-fy2026")
-# Returns: {
-#   'id': 'earnings:nvda:q3-fy2026',
-#   'ticker': 'NVDA',
-#   'call_start_utc': datetime(...),  # timezone-aware
-#   'call_date': date(...),
-#   ...
-# }
+
+# Get press release
+pr = get_press_release("earnings:nvda:q3-fy2026")
+
+# Search news for specific date range
+news = search_news(
+    ticker="NVDA",
+    start_time=datetime(2025, 11, 12),
+    end_time=datetime(2025, 11, 19)
+)
 
 # Get Q&A exchanges
 qa = get_qa_section("earnings:nvda:q3-fy2026")
-
-# Get news around call
-news = search_news_around_call("earnings:nvda:q3-fy2026", "pre-call")
 ```
 
 ## 📁 Project Structure
@@ -252,30 +309,31 @@ news = search_news_around_call("earnings:nvda:q3-fy2026", "pre-call")
 finreport/
 ├── src/aifinreport/
 │   ├── agents/
-│   │   └── earnings_analyst.py    # AI agent implementation
+│   │   ├── news_period_analyst.py  # Analyze any time period
+│   │   ├── news_ranker.py          # Semantic article ranking
+│   │   └── earnings_analyst.py     # Full earnings workflow
 │   ├── cli/
-│   │   ├── generate_report.py     # News report generation
-│   │   └── ingest_earnings.py     # Earnings ingestion CLI
+│   │   ├── generate_report.py      # Report generation
+│   │   ├── ingest_earnings.py      # Earnings ingestion CLI
+│   │   └── ingest_press_release.py # Press release ingestion
 │   ├── ingestion/
-│   │   ├── tiingo.py              # News ingestion
-│   │   ├── earnings_parser.py     # Transcript parsing (with closing)
-│   │   └── earnings_storage.py    # Database storage
+│   │   ├── tiingo.py               # News ingestion
+│   │   ├── earnings_parser.py      # Transcript parsing
+│   │   └── earnings_storage.py     # Database storage
 │   ├── tools/
-│   │   ├── database_tools.py      # 8 query functions
-│   │   └── market_data_tools.py   # 3-phase price analysis
-│   ├── analysis/
-│   │   ├── selection.py           # Article selection
-│   │   └── summarization.py       # Summarization
-│   ├── database/
-│   │   └── connection.py          # DB connection
-│   └── config.py                  # Configuration
+│   │   ├── database_tools.py       # Database queries
+│   │   └── market_data_tools.py    # Price analysis
+│   └── config.py                   # Configuration
 ├── data/
-│   └── earnings_transcripts/
-│       └── NVDA/                  # NVDA transcripts (Q1, Q2, Q3 FY2026)
+│   ├── earnings_transcripts/
+│   │   └── NVDA/                   # NVDA call transcripts (Q1, Q2, Q3)
+│   └── press_releases/
+│       └── NVDA/                   # Press release PDFs
 ├── migrations/
-│   ├── 001_create_earnings_tables.sql  # Initial schema
-│   └── 003_standardize_timestamps.sql  # UTC timestamps (timestamptz)
-├── notebooks/                     # Jupyter notebooks for visualization
+│   ├── 001_create_earnings_tables.sql
+│   ├── 002_add_press_release_columns.sql
+│   ├── 003_standardize_timestamps.sql
+│   └── 004_add_event_timestamps.sql
 ├── requirements.txt
 └── README.md
 ```
@@ -284,115 +342,112 @@ finreport/
 
 ### earnings_calls
 - Earnings call metadata (ticker, quarter, fiscal year)
-- **Call date and time in UTC** (timestamptz)
-- Press release time (if available)
+- **Call start time in UTC** (timestamptz)
+- **Press release time in UTC** (timestamptz)
+- **Call end time in UTC** (timestamptz)
 - Full transcript storage
-- Total interventions and unique speakers
 
 ### call_interventions
 - Individual statements with **UTC timestamps** (timestamptz)
-- Speaker attribution (name, role, type: analyst/management/operator)
-- Relative time from call start
-- Q&A segmentation (is_question, is_answer, question_id)
-- Analyst firm tracking
+- Speaker attribution (name, role, type)
+- Q&A segmentation
 - **Captures all interventions including closing remarks**
 
 ### news_raw
 - News article content and metadata
+- **Full body text** for semantic analysis
 - Ticker associations (array)
 - Published timestamps (UTC, timestamptz)
+- **Press release flags:**
+  - `is_press_release`: Boolean flag
+  - `press_release_type`: Type (earnings, guidance, etc.)
+  - `related_call_id`: Links to earnings call
 
-## 🔧 Tools & APIs
+## 🔧 Key Tools
+
+### News Period Analyst
+- **Purpose:** Analyze news and stock performance for any time period
+- **Semantic Ranking:** Uses local embeddings (all-MiniLM-L6-v2)
+- **No API Limits:** Runs locally, process unlimited articles
+- **Use Cases:**
+  - Pre-earnings: 7 days before press release
+  - Post-earnings: 5 days after call
+  - Custom: Any date range
 
 ### Database Query Tools
 ```python
-get_earnings_call(call_id)           # Load call metadata
-get_prepared_remarks(call_id)        # Get non-Q&A content
-get_qa_section(call_id)              # Get Q&A exchanges
-search_news_around_call(call_id, window)  # Time-windowed news
-get_analyst_questions(call_id)       # Questions only
-get_management_answers(call_id)      # Answers with filtering
-get_speaker_interventions(call_id, speaker)  # Filter by speaker
-get_question_answer_pairs(call_id)   # Linked Q&A
+search_news(ticker, start_time, end_time)    # Flexible date search
+get_earnings_call(call_id)                   # Load call metadata
+get_press_release(call_id)                   # Get official press release
+get_prepared_remarks(call_id)                # Get non-Q&A content
+get_qa_section(call_id)                      # Get Q&A exchanges
 ```
 
 ### Market Data Tools
 ```python
 fetch_ohlc_bars(ticker, start, end, interval)
 # Get stock prices for any time window
-# - Supports: 1min, 5min, 15min, 30min, 1hour, 1day
-# - Timezone-aware: treats naive datetimes as UTC
-# - Handles DELAYED status for future dates
-
-fetch_earnings_price_analysis(ticker, pr_time, call_end)
-# 3-phase analysis around earnings:
-# - Phase 1: 14 days before (daily bars)
-# - Phase 2: PR to call end (5-min bars)
-# - Phase 3: 7 days after (daily bars, adjusted for data availability)
+# Supports: 1min, 5min, 15min, 30min, 1hour, 1day
 ```
 
-## 🎯 Example: Agent Output
-```markdown
-# NVDA Q3 FY2026 Earnings Analysis
+## 🎯 Example: News Period Analysis
+```python
+# Analyze 7 days before earnings
+from datetime import datetime, timezone, timedelta
+from aifinreport.agents.news_period_analyst import analyze_news_period
 
-## Executive Summary
-Revenue exceeded expectations, but stock declined due to concerns 
-raised in Q&A about China export restrictions...
+pr_time = datetime(2025, 11, 19, 21, 30, 0, tzinfo=timezone.utc)
 
-## Key Metrics (from 3-phase price analysis)
-- Pre-event trend: -4.45% (14 days before)
-- Event reaction: +0.56% (during call)
-- Post-event trend: -4.10% (3 days after)
+result = analyze_news_period(
+    ticker="NVDA",
+    start_date=pr_time - timedelta(days=7),
+    end_date=pr_time,
+    quarter="Q3",
+    top_n_articles=10,
+    context="Pre-earnings expectations"
+)
 
-## Management Commentary
-CEO emphasized five competitive advantages...
-
-## Analyst Focus (Q&A)
-Primary concerns:
-1. China revenue impact
-2. Supply chain constraints
-3. Memory pricing pressure
-
-## Market Reaction
-- Immediate: +0.56% during call
-- Follow-through: -4.10% over next 3 days
-- Post-call news spike: 73 articles
-
-## Investment Thesis
-Despite strong fundamentals, geopolitical headwinds create 
-near-term uncertainty...
+# Results include:
+# - Top 10 most relevant articles (ranked semantically)
+# - Stock performance: -3.76%
+# - 62 articles analyzed, 10 selected
 ```
 
 ## 🛣️ Roadmap
 
 - [x] News ingestion pipeline
-- [x] Earnings call ingestion with full transcript capture
-- [x] Database schema with UTC timestamps (timestamptz)
-- [x] Parser captures closing remarks
-- [x] 3-phase price analysis around earnings
-- [x] Timezone handling for Singapore (UTC+8)
-- [x] Agent foundation with data gathering tools
-- [ ] LLM-based metric extraction
-- [ ] Sentiment analysis
-- [ ] Complete agent workflow
+- [x] Press release ingestion and storage
+- [x] Earnings call ingestion with full transcript
+- [x] Database schema with UTC timestamps
+- [x] Press release timestamp tracking
+- [x] Semantic article ranking (local embeddings)
+- [x] News period analysis (flexible date ranges)
+- [ ] LLM summarization of top articles
+- [ ] Post-earnings analysis workflow
+- [ ] Complete earnings report generation
 - [ ] Multi-agent collaboration
-- [ ] Automated report distribution
 - [ ] Web dashboard
 - [ ] Real-time WebSocket integration
 
+## 📝 Special Installation Notes
+
+### Sentence Transformers
+Due to pip dependency resolution issues, install separately:
+```bash
+pip install --upgrade pip
+pip install sentence-transformers --no-deps
+pip install torch transformers huggingface-hub tokenizers safetensors
+```
+
 ## 🐛 Known Limitations
 
-- **Morning session data**: Some intraday bars may be unavailable for the first 2.5 hours of trading (market open to noon EST) depending on data provider settlement times
-- **Recent data**: Post-event analysis adjusted to avoid DELAYED status (ends 2 days before current date)
-- **Timezone**: All times stored in UTC; ensure call start times are provided in UTC when ingesting
+- **Semantic ranking:** First run downloads ~90MB model (one-time)
+- **Recent data:** Some intraday bars may have delays
+- **Timezone:** All times must be provided in UTC
 
 ## 📝 License
 
 This project is for educational and research purposes.
-
-## 🤝 Contributing
-
-This is a personal research project. Feel free to fork and adapt for your own use.
 
 ## ⚠️ Disclaimer
 
@@ -403,8 +458,11 @@ This tool is for informational purposes only. Not financial advice. Always do yo
 ## 📊 Current Data
 
 **NVIDIA Earnings Calls (FY2026):**
-- Q1: May 29, 2025 (31 interventions)
-- Q2: August 27, 2025 (48 interventions)
-- Q3: November 19, 2025 (43 interventions)
+- Q1: May 28, 2025 @ 20:30 UTC (PR) / 21:00 UTC (Call)
+- Q2: August 27, 2025 @ 20:30 UTC (PR) / 21:00 UTC (Call)
+- Q3: November 19, 2025 @ 21:30 UTC (PR) / 22:00 UTC (Call)
 
-All calls include complete transcripts with Q&A and closing remarks.
+All calls include:
+- Complete transcripts with Q&A and closing remarks
+- Press release times for accurate pre-event analysis
+- Press release PDFs stored in database
