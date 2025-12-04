@@ -17,7 +17,7 @@ def get_earnings_call(call_id: str) -> Dict:
         call_id: Unique identifier (e.g., 'earnings:nvda:q2-fy2026')
     
     Returns:
-        Dictionary with call metadata
+        Dictionary with call metadata including press_release_time_utc
     
     Raises:
         ValueError: If call_id not found
@@ -29,13 +29,14 @@ def get_earnings_call(call_id: str) -> Dict:
         'NVDA'
     """
     query = """
-        SELECT 
+        SELECT
             id,
             ticker,
             fiscal_quarter,
             fiscal_year,
             call_date,
-            call_start_utc
+            call_start_utc,
+            press_release_time_utc
         FROM earnings_calls
         WHERE id = %s
     """
@@ -49,40 +50,32 @@ def get_earnings_call(call_id: str) -> Dict:
                 if result is None:
                     raise ValueError(f"Earnings call not found: {call_id}")
                 
-                # Unpack result
-                (id, ticker, fiscal_quarter, fiscal_year, 
-                 call_date, call_start_utc) = result
+                # Unpack result (added press_release_time_utc)
+                (id, ticker, fiscal_quarter, fiscal_year,
+                 call_date, call_start_utc, press_release_time_utc) = result
                 
                 # Get intervention count
                 cur.execute("""
-                    SELECT COUNT(*) 
-                    FROM call_interventions 
+                    SELECT COUNT(*)
+                    FROM call_interventions
                     WHERE call_id = %s
                 """, (call_id,))
                 total_interventions = cur.fetchone()[0]
                 
-                # Get speaker count
-                cur.execute("""
-                    SELECT COUNT(DISTINCT speaker_name) 
-                    FROM call_interventions 
-                    WHERE call_id = %s
-                """, (call_id,))
-                total_speakers = cur.fetchone()[0]
-                
                 return {
-                    "id": id,
-                    "ticker": ticker,
-                    "fiscal_quarter": fiscal_quarter,
-                    "fiscal_year": fiscal_year,
-                    "call_date": call_date,
-                    "call_start_utc": call_start_utc,
-                    "total_interventions": total_interventions,
-                    "total_speakers": total_speakers
+                    'id': id,
+                    'ticker': ticker,
+                    'fiscal_quarter': fiscal_quarter,
+                    'fiscal_year': fiscal_year,
+                    'call_date': call_date,
+                    'call_start_utc': call_start_utc,
+                    'press_release_time_utc': press_release_time_utc,  # NEW
+                    'total_interventions': total_interventions
                 }
     
     except psycopg2.Error as e:
         raise psycopg2.Error(f"Database error: {e}")
-
+    
 def get_prepared_remarks(call_id: str) -> list:
     """
     Retrieve prepared remarks (non-Q&A interventions) from earnings call.
@@ -215,52 +208,33 @@ def get_qa_section(call_id: str) -> list:
     except psycopg2.Error as e:
         raise psycopg2.Error(f"Database error: {e}")
 
-def search_news_around_call(
-    call_id: str, 
-    time_window: str = "all",
+def search_news(
+    ticker: str,
+    start_time: datetime,
+    end_time: datetime,
     limit: int = None
 ) -> list:
     """
-    Search for news articles around an earnings call.
+    Search for news articles by ticker and date range.
     
     Args:
-        call_id: Unique identifier (e.g., 'earnings:nvda:q2-fy2026')
-        time_window: 'pre-call' (7 days before), 'during' (±6 hours), 
-                     'post-24h' (24 hours after), 'post-7d' (7 days after),
-                     or 'all' (14 days: 7 before + 7 after)
+        ticker: Stock ticker (e.g., "NVDA")
+        start_time: Start of date range (inclusive)
+        end_time: End of date range (inclusive)
         limit: Optional limit on number of articles
     
     Returns:
-        List of news article dictionaries
-    
-    Raises:
-        ValueError: If call_id not found or invalid time_window
+        List of news article dictionaries, ordered by published_utc DESC
     
     Example:
-        >>> news = search_news_around_call("earnings:nvda:q2-fy2026", "pre-call")
-        >>> print(f"Found {len(news)} articles before call")
+        >>> from datetime import datetime, timedelta
+        >>> news = search_news(
+        ...     ticker="NVDA",
+        ...     start_time=datetime(2025, 11, 12),
+        ...     end_time=datetime(2025, 11, 19)
+        ... )
+        >>> print(f"Found {len(news)} articles")
     """
-    from datetime import timedelta
-    
-    # Get call info
-    call = get_earnings_call(call_id)
-    call_time = call['call_start_utc']
-    ticker = call['ticker']
-    
-    # Define time ranges
-    time_ranges = {
-        'pre-call': (call_time - timedelta(days=7), call_time),
-        'during': (call_time - timedelta(hours=1), call_time + timedelta(hours=6)),
-        'post-24h': (call_time, call_time + timedelta(hours=24)),
-        'post-7d': (call_time, call_time + timedelta(days=7)),
-        'all': (call_time - timedelta(days=7), call_time + timedelta(days=7))
-    }
-    
-    if time_window not in time_ranges:
-        raise ValueError(f"Invalid time_window: {time_window}. Must be one of {list(time_ranges.keys())}")
-    
-    start_time, end_time = time_ranges[time_window]
-    
     query = """
         SELECT 
             id,
@@ -269,10 +243,12 @@ def search_news_around_call(
             url,
             published_utc,
             source,
-            tickers
+            tickers,
+            full_body
         FROM news_raw
         WHERE %s = ANY(tickers)
-          AND published_utc BETWEEN %s AND %s
+          AND published_utc >= %s
+          AND published_utc <= %s
         ORDER BY published_utc DESC
     """
     
@@ -297,7 +273,8 @@ def search_news_around_call(
                         "url": row[3],
                         "published_utc": row[4],
                         "source": row[5],
-                        "tickers": row[6]
+                        "tickers": row[6],
+                        "full_body": row[7]
                     })
                 
                 return articles
