@@ -1,0 +1,163 @@
+{
+  "reported_results": {
+    "revenue": {
+      "value": "$57.0 billion",
+      "gaap_non_gaap": "both",
+      "q_over_q": "22%",
+      "y_over_y": "62%",
+      "vs_prior_quarter": "$46.743 billion",
+      "vs_year_ago": "$35.082 billion"
+    },
+    "eps": {
+      "gaap": "$1.30",
+      "non_gaap": "$1.30",
+      "q_over_q": "20%",
+      "y_over_y": "67%"
+    },
+    "gross_margin": {
+      "gaap": "73.4%",
+      "non_gaap": "73.6%",
+      "q_over_q_change": "1.0 pts",
+      "y_over_y_change": "-1.2 pts"
+    },
+    "operating_income": {
+      "gaap": "$36.010 billion",
+      "non_gaap": "$37.752 billion",
+      "q_over_q": "27%",
+      "y_over_y": "65%"
+    },
+    "net_income": {
+      "gaap": "$31.910 billion",
+      "non_gaap": "$31.767 billion",
+      "q_over_q": "21%",
+      "y_over_y": "65%"
+    }
+  },
+  "segment_performance": [
+    {
+      "segment_name": "Data Center",
+      "revenue": "$51.2 billion",
+      "q_over_q": "25%",
+      "y_over_y": "66%",
+      "notes": "Record revenue"
+    },
+    {
+      "segment_name": "Gaming",
+      "revenue": "$4.3 billion",
+      "q_over_q": "-1%",
+      "y_over_y": "30%",
+      "notes": ""
+    },
+    {
+      "segment_name": "Professional Visualization",
+      "revenue": "$760 million",
+      "q_over_q": "26%",
+      "y_over_y": "56%",
+      "notes": ""
+    },
+    {
+      "segment_name": "Automotive and Robotics",
+      "revenue": "$592 million",
+      "q_over_q": "1%",
+      "y_over_y": "32%",
+      "notes": ""
+    }
+  ],
+  "guidance_provided": [
+    {
+      "time_period": "Q4 FY2026",
+      "metric": "Revenue",
+      "guidance_value": "$65.0 billion, plus or minus 2%",
+      "context": ""
+    },
+    {
+      "time_period": "Q4 FY2026",
+      "metric": "GAAP and non-GAAP gross margins",
+      "guidance_value": "74.8% and 75.0%, respectively, plus or minus 50 basis points",
+      "context": ""
+    },
+    {
+      "time_period": "Q4 FY2026",
+      "metric": "GAAP and non-GAAP operating expenses",
+      "guidance_value": "$6.7 billion and $5.0 billion, respectively",
+      "context": ""
+    },
+    {
+      "time_period": "Q4 FY2026",
+      "metric": "GAAP and non-GAAP other income and expense",
+      "guidance_value": "an income of approximately $500 million, excluding gains and losses from non-marketable and publicly-held equity securities",
+      "context": ""
+    },
+    {
+      "time_period": "Q4 FY2026",
+      "metric": "GAAP and non-GAAP tax rates",
+      "guidance_value": "17.0%, plus or minus 1%, excluding any discrete items",
+      "context": ""
+    }
+  ],
+  "management_commentary": [
+    {
+      "speaker": "CEO",
+      "quote": "\"Blackwell sales are off the charts, and cloud GPUs are sold out. Compute demand keeps accelerating and compounding across training and inference \u2014 each growing exponentially. We\u2019ve entered the virtuous cycle of AI. The AI ecosystem is scaling fast \u2014 with more new foundation model makers, more AI startups, across more industries, and in more countries. AI is going everywhere, doing everything, all at once.\"",
+      "theme": "AI ecosystem and demand"
+    }
+  ],
+  "new_announcements": [
+    {
+      "type": "product",
+      "announcement": "NVIDIA Blackwell achieved the highest performance and best overall efficiency in the SemiAnalysis InferenceMAX benchmarks, while delivering 10x throughput per megawatt compared with the previous generation.",
+      "significance": "Performance and efficiency of NVIDIA Blackwell"
+    },
+    {
+      "type": "partnership",
+      "announcement": "Announced a strategic partnership with OpenAI to deploy at least 10 gigawatts of NVIDIA systems for OpenAI\u2019s next-generation AI infrastructure.",
+      "significance": "Strategic partnership with OpenAI"
+    },
+    {
+      "type": "product",
+      "announcement": "Unveiled NVIDIA Rubin CPX, a new class of GPU purpose-built for massive-context processing.",
+      "significance": "Introduction of NVIDIA Rubin CPX"
+    },
+    {
+      "type": "product",
+      "announcement": "Introduced NVIDIA NVQLink\u2122, an open system architecture for tightly coupling the extreme performance of NVIDIA GPU computing with quantum processors.",
+      "significance": "Introduction of NVIDIA NVQLink\u2122"
+    },
+    {
+      "type": "product",
+      "announcement": "Launched NVIDIA BlueField-4, the processor for the operating system of AI factories.",
+      "significance": "Launch of NVIDIA BlueField-4"
+    },
+    {
+      "type": "partnership",
+      "announcement": "Partnered with Nokia to add NVIDIA-powered AI-RAN products to Nokia\u2019s industry-leading RAN portfolio.",
+      "significance": "Partnership with Nokia"
+    },
+    {
+      "type": "strategic",
+      "announcement": "Set records on the new MLPerf Inference v5.1 benchmark with NVIDIA Blackwell Ultra, and won every MLPerf Training v5.1 benchmark.",
+      "significance": "Performance records with NVIDIA Blackwell Ultra"
+    },
+    {
+      "type": "strategic",
+      "announcement": "Launched the world\u2019s first Industrial AI Cloud with Deutsche Telekom to power the AI era of Germany\u2019s industrial transformation.",
+      "significance": "Launch of Industrial AI Cloud"
+    },
+    {
+      "type": "strategic",
+      "announcement": "Announced that NVIDIA is working with the South Korea government and industrial leaders to expand the nation\u2019s AI infrastructure with over a quarter-million NVIDIA GPUs.",
+      "significance": "Expansion of AI infrastructure in South Korea"
+    }
+  ],
+  "notable_items": [
+    "NVIDIA returned $37.0 billion to shareholders in the form of shares repurchased and cash dividends during the first nine months of fiscal 2026.",
+    "NVIDIA will pay its next quarterly cash dividend of $0.01 per share on December 26, 2025, to all shareholders of record on December 4, 2025."
+  ],
+  "_metadata": {
+    "call_id": "earnings:nvda:q3-fy2026",
+    "company_name": "NVIDIA Corporation",
+    "quarter": "Q3 FY2026",
+    "press_release_date": "2025-11-19 21:30:00+08:00",
+    "model": "mistral-small-latest"
+  }
+}

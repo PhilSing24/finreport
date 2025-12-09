@@ -1,0 +1,131 @@
+{
+  "expected_results": {
+    "EPS": {
+      "expected_value": "$1.24",
+      "confidence": "HIGH",
+      "article_mentions": 2,
+      "percentage_of_articles": 20,
+      "context": "Analysts project $1.24 EPS, up 53.1% YoY, with a 0.4% upward revision over the last 30 days."
+    },
+    "Revenue": {
+      "expected_value": "$54.59 billion",
+      "confidence": "HIGH",
+      "article_mentions": 2,
+      "percentage_of_articles": 20,
+      "context": "Revenue expected to increase 55.6% YoY."
+    },
+    "Revenue-Data Center": {
+      "expected_value": "$48.94 billion",
+      "confidence": "MEDIUM",
+      "article_mentions": 1,
+      "percentage_of_articles": 10,
+      "context": "Projected to increase 59.1% YoY."
+    },
+    "Revenue-Professional": {
+      "expected_value": "Not specified",
+      "confidence": "LOW",
+      "article_mentions": 1,
+      "percentage_of_articles": 10,
+      "context": "Mentioned but not quantified."
+    },
+    "Gross Margins": {
+      "expected_value": "Not specified",
+      "confidence": "LOW",
+      "article_mentions": 1,
+      "percentage_of_articles": 10,
+      "context": "Mentioned in the context of FCF margin but not explicitly stated."
+    }
+  },
+  "expected_guidance": [
+    {
+      "time_period": "Q4 FY2026",
+      "guidance_item": "Revenue",
+      "expected_content": "$63 billion to $64 billion",
+      "importance": "Indicates continued strong demand and growth trajectory.",
+      "article_mentions": 1,
+      "confidence": "MEDIUM"
+    },
+    {
+      "time_period": "Long-term",
+      "guidance_item": "AI Infrastructure Spend",
+      "expected_content": "$3 to $4 trillion by the end of the decade",
+      "importance": "Highlights the company's growth potential in the AI market.",
+      "article_mentions": 1,
+      "confidence": "MEDIUM"
+    }
+  ],
+  "key_themes": [
+    {
+      "theme_name": "AI and High-Performance Computing Demand",
+      "summary": "Nvidia's earnings are seen as a bellwether for AI and high-performance computing demand.",
+      "sentiment": "positive",
+      "article_mentions": 3,
+      "supporting_points": [
+        "Nvidia's earnings will serve as a bellwether for the trajectory of AI and high-performance computing demand.",
+        "Nvidia is a foundational piece of this AI Revolution.",
+        "Nvidia's performance coming amid ongoing trade negotiations regarding China chip restrictions."
+      ]
+    },
+    {
+      "theme_name": "Market Valuation and Growth Sustainability",
+      "summary": "Concerns about the sustainability of Nvidia's growth and valuation.",
+      "sentiment": "mixed",
+      "article_mentions": 2,
+      "supporting_points": [
+        "Skepticism from several investors, including hedge fund manager Michael Burry.",
+        "Concerns about the rate of growth being valued in perpetuity."
+      ]
+    },
+    {
+      "theme_name": "Stock Performance and Market Reaction",
+      "summary": "Expectations for stock performance and market reaction to earnings.",
+      "sentiment": "mixed",
+      "article_mentions": 3,
+      "supporting_points": [
+        "Options traders believe the recent weakness in Nvidia stock will prove temporary.",
+        "Dan Ives recommends buying NVDA shares ahead of the company\u2019s Q3 earnings.",
+        "Nvidia's stock has appreciated 37% YTD, adding over $1 trillion in market capitalization."
+      ]
+    }
+  ],
+  "surprise_scenarios": {
+    "positive": [
+      {
+        "scenario": "Nvidia reports earnings significantly above the consensus estimate of $1.18 per share.",
+        "impact": "Positive market reaction, potential stock price increase.",
+        "likelihood": "High, based on analyst expectations and positive sentiment."
+      },
+      {
+        "scenario": "Nvidia provides strong forward guidance for Q4 FY2026, exceeding expectations.",
+        "impact": "Positive market reaction, potential stock price increase.",
+        "likelihood": "Medium, based on analyst projections and market sentiment."
+      }
+    ],
+    "negative": [
+      {
+        "scenario": "Nvidia reports earnings below the consensus estimate of $1.18 per share.",
+        "impact": "Negative market reaction, potential stock price decrease.",
+        "likelihood": "Low, based on analyst expectations and positive sentiment."
+      },
+      {
+        "scenario": "Nvidia provides weak forward guidance for Q4 FY2026, falling short of expectations.",
+        "impact": "Negative market reaction, potential stock price decrease.",
+        "likelihood": "Low, based on analyst projections and market sentiment."
+      }
+    ]
+  },
+  "market_sentiment": {
+    "overall_tone": "optimistic with some caution",
+    "consensus_expectation": "Nvidia is expected to report strong earnings and provide positive forward guidance, reflecting continued strong demand and growth in the AI market.",
+    "bull_case": "Nvidia's strong performance in AI and high-performance computing will drive continued growth and stock price appreciation.",
+    "bear_case": "Concerns about the sustainability of Nvidia's growth and valuation could lead to a correction in the stock price.",
+    "divergent_views": "Some analysts and investors express skepticism about the sustainability of Nvidia's growth and valuation, while others remain optimistic about the company's future prospects."
+  },
+  "_metadata": {
+    "company_name": "NVIDIA Corporation",
+    "ticker": "NVDA",
+    "quarter": "Q3 FY2026",
+    "article_count": 10,
+    "model": "mistral-small-latest"
+  }
+}
